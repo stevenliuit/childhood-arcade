@@ -66,14 +66,21 @@ def main():
         shutil.copyfile(src, dst)
         picked.append(dst)
         print('%-56s %8.1f MB' % (dst_name, os.path.getsize(dst) / 1048576))
-    # 数据包（分卷就一起收）
-    for f in sorted(os.listdir(OUT)):
-        if f.startswith('游戏数据包') and f.endswith(('.zip', '.zip.part1')) or \
-           f.startswith('游戏数据包') and '.part' in f:
+    # 数据包：分卷优先（有 .partN 就不再放整包，整包会超 2GiB 上限）
+    parts = sorted(f for f in os.listdir(OUT) if '.part' in f and f.startswith('游戏数据包'))
+    if parts:
+        for f in parts:
             dst = os.path.join(STAGE, f)
             shutil.copyfile(os.path.join(OUT, f), dst)
             picked.append(dst)
             print('%-56s %8.1f MB' % (f, os.path.getsize(dst) / 1048576))
+    else:
+        for f in sorted(os.listdir(OUT)):
+            if f.startswith('游戏数据包') and f.endswith('.zip'):
+                dst = os.path.join(STAGE, f)
+                shutil.copyfile(os.path.join(OUT, f), dst)
+                picked.append(dst)
+                print('%-56s %8.1f MB' % (f, os.path.getsize(dst) / 1048576))
     for extra in ('合并数据包.py',):
         src = os.path.join(OUT, extra)
         if os.path.isfile(src):
