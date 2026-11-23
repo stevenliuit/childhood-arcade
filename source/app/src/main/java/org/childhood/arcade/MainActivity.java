@@ -29,6 +29,11 @@ import java.io.*;
 import java.util.HashMap;
 
 public class MainActivity extends Activity implements InputManager.InputDeviceListener {
+    public static volatile MainActivity instance;
+    public static final String DEFAULT_ROOT="/sdcard/ChildhoodArcade";
+    public static String externalRoot(android.content.Context c){try{String v=c.getSharedPreferences("deployment",0).getString("external_root",DEFAULT_ROOT);return v==null||v.length()==0?DEFAULT_ROOT:v;}catch(Exception e){return DEFAULT_ROOT;}}
+    public static void setExternalRoot(android.content.Context c,String v){try{c.getSharedPreferences("deployment",0).edit().putString("external_root",v).apply();}catch(Exception ignored){}}
+
     private WebView web;
     private NativeNes nativeNes;
     HallResources resources;
@@ -50,6 +55,8 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
+        instance=this;
+        if(android.os.Build.VERSION.SDK_INT>=23&&checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE)!=android.content.pm.PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{android.Manifest.permission.READ_EXTERNAL_STORAGE},100);}
         HallUpdates.configureTls(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         hideSystemUI();
@@ -80,6 +87,8 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
                 if(address.startsWith("https://appassets.androidplatform.net/assets/")){
                     String asset=request.getUrl().getPath().substring("/assets/".length());
                     if(asset.contains("..")||asset.startsWith("/"))return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));
+                    if("catalog.js".equals(asset)){try{String[] plats=new String[]{"nes","arcade","gba","md","sfc"};org.json.JSONArray all=new org.json.JSONArray();for(String p:plats){File gj=new File(new File(externalRoot(MainActivity.this),p),"games.json");if(!gj.isFile())continue;String json=new String(readAll(new FileInputStream(gj),8*1024*1024),"UTF-8");org.json.JSONArray arr=new org.json.JSONArray(json);for(int i=0;i<arr.length();i++){org.json.JSONObject g=arr.getJSONObject(i);g.put("path",p+"/"+g.getString("path"));g.put("art",p+"/"+g.getString("art"));all.put(g);}}java.util.Map<String,String> hdr=new java.util.HashMap<String,String>();hdr.put("Cache-Control","no-store");return new WebResourceResponse("text/javascript","UTF-8",200,"OK",hdr,new ByteArrayInputStream(("window.GAME_CATALOG="+all.toString()+";").getBytes("UTF-8")));}catch(Exception ignored){}}
+                    if(asset.endsWith(".png")){File cf=new File(externalRoot(MainActivity.this),asset);if(cf.isFile())try{return new WebResourceResponse("image/png",null,new FileInputStream(cf));}catch(Exception ignored){}}
                     String mime=asset.endsWith(".js")?"text/javascript":asset.endsWith(".css")?"text/css":asset.endsWith(".html")?"text/html":asset.endsWith(".wasm")?"application/wasm":asset.endsWith(".png")?"image/png":asset.endsWith(".ttf")?"font/ttf":"application/octet-stream";
                     try{return new WebResourceResponse(mime,(mime.startsWith("text/")?"UTF-8":null),getAssets().open(asset));}catch(IOException e){return new WebResourceResponse("text/plain","UTF-8",404,"Not Found",null,new ByteArrayInputStream(new byte[0]));}
                 }
@@ -171,6 +180,34 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
     private byte[] readAll(InputStream in,int max)throws IOException{try{ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buf=new byte[8192];int n;while((n=in.read(buf))!=-1){if(out.size()+n>max)throw new IOException("Data too large");out.write(buf,0,n);}return out.toByteArray();}finally{in.close();}}
     private void atomicWrite(File f,String value)throws IOException {AtomicFile a=new AtomicFile(f);FileOutputStream out=null;try{out=a.startWrite();out.write(value.getBytes("UTF-8"));a.finishWrite(out);}catch(IOException e){if(out!=null)a.failWrite(out);throw e;}}
     private void deleteTree(File file){if(file.isDirectory()){File[] children=file.listFiles();if(children!=null)for(File child:children)deleteTree(child);}file.delete();}
+    public String diagLoad(String id){
+        try{
+            for(String p:new String[]{"nes","arcade","gba","md","sfc"}){
+                File gj=new File(new File(externalRoot(this),p),"games.json");
+                if(!gj.isFile())continue;
+                String json=new String(readAll(new FileInputStream(gj),8*1024*1024),"UTF-8");
+                org.json.JSONArray arr=new org.json.JSONArray(json);
+                for(int i=0;i<arr.length();i++){
+                    org.json.JSONObject g=arr.getJSONObject(i);
+                    if(id.equals(g.optString("id"))){
+                        String path=g.getString("path");
+                        String name=path.substring(path.lastIndexOf('/')+1);
+                        String hash=g.getString("hash");
+                        String sys=g.optString("system","nes");
+                        String res;
+                        if("gba".equals(sys))res=nativeNes.loadGba(name,hash);
+                        else if("md".equals(sys))res=nativeNes.loadMd(name,hash);
+                        else if("sfc".equals(sys))res=nativeNes.loadSfc(name,hash);
+                        else if("nes".equals(sys))res=nativeNes.load(Base64.encodeToString(readAll(new FileInputStream(new File(new File(externalRoot(this),p),"roms/"+name)),8*1024*1024),Base64.NO_WRAP),hash);
+                        else if("mame".equals(sys))res=nativeNes.loadMame(name,hash);
+                        else res=nativeNes.loadArcade(name,hash);
+                        return res;
+                    }
+                }
+            }
+            return "{\"error\":\"game not found\"}";
+        }catch(Throwable e){return "{\"error\":\""+e.getMessage()+"\"}";}
+    }
     public class Bridge {
         @JavascriptInterface public String platformInfo(){String version="未知";try{version=getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(Exception ignored){}return "{\"api\":"+android.os.Build.VERSION.SDK_INT+",\"version\":"+JSONObject.quote(version)+"}";}
         @JavascriptInterface public void configureControllers(String json){try{controllerConfig=new JSONObject(json);runOnUiThread(new Runnable(){public void run(){axes.clear();sentAxes.clear();}});}catch(Exception ignored){}}
@@ -186,19 +223,23 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         @JavascriptInterface public String commitPackImport(){return resources.commit();}
         @JavascriptInterface public void cancelPackImport(){resources.cancel();}
         @JavascriptInterface public void setSmoothing(boolean value){nativeNes.setSmoothing(value);}
+        @JavascriptInterface public String gameRoot(){return externalRoot(MainActivity.this);}
+        @JavascriptInterface public void setGameRoot(String path){if(path!=null&&path.length()>0&&!path.contains(".."))setExternalRoot(MainActivity.this,path);}
+        @JavascriptInterface public void pickGameRoot(){runOnUiThread(new Runnable(){public void run(){new RootPicker(MainActivity.this,new RootPicker.Callback(){public void picked(String path){setExternalRoot(MainActivity.this,path);js("Arcade.gameRootChanged('"+path.replace("'","")+"')");}}).start();}});}
         @JavascriptInterface public String fetchUpdate(String url){try{return new String(HallUpdates.download(url,2097152),"UTF-8");}catch(Exception e){return "{\"error\":\"更新清单无法读取，请检查网络后重试\"}";}}
         @JavascriptInterface public String prepareAppUpdate(String json){return HallUpdates.prepare(MainActivity.this,json);}
         @JavascriptInterface public void beginAppUpdate(String json){HallUpdates.begin(MainActivity.this,json);}
         @JavascriptInterface public String appUpdateStatus(){return HallUpdates.status(MainActivity.this);}
         @JavascriptInterface public void completeAppUpdate(){HallUpdates.complete(MainActivity.this);}
         @JavascriptInterface public String verifyImportedResources(){try{return resources.verifyInstalled();}catch(Exception e){return JSONObject.quote(e.getMessage());}}
-        @JavascriptInterface public String checkGame(String json){try{JSONObject g=new JSONObject(json);File f=resources.resolve(g.getString("hash"));String hash;if(f!=null)hash=HallUpdates.fileDigest(f);else if(g.optString("system","nes").equals("nes"))hash=HallUpdates.streamDigest(getAssets().open(g.getString("path")));else {String path=g.getString("path");if(path.contains("..")||path.startsWith("/"))throw new IOException("路径无效");f=new File(getFilesDir(),path);hash=HallUpdates.fileDigest(f);}if(!hash.equals(g.getString("hash")))return JSONObject.quote(g.getString("title")+"：校验失败");String dependency=HallResources.dependencyError(g,f);return dependency==null?"null":JSONObject.quote(g.getString("title")+"："+dependency);}catch(Exception e){return JSONObject.quote("文件缺失或无法读取");}}
+        @JavascriptInterface public String checkGame(String json){try{JSONObject g=new JSONObject(json);String path=g.getString("path");if(path.contains("..")||path.startsWith("/"))throw new IOException("路径无效");File f=new File(externalRoot(MainActivity.this),path);if(!f.isFile())throw new IOException("文件缺失");String hash=HallUpdates.fileDigest(f);if(!hash.equals(g.getString("hash")))return JSONObject.quote(g.getString("title")+"：校验失败");String dependency=HallResources.dependencyError(g,f);return dependency==null?"null":JSONObject.quote(g.getString("title")+"："+dependency);}catch(Exception e){return JSONObject.quote("文件缺失或无法读取");}}
 
         @JavascriptInterface public boolean nativeNesAvailable(){return new File(getApplicationInfo().nativeLibraryDir,"libfceumm.so").isFile();}
         @JavascriptInterface public String nativeSfcStart(String name,String hash){return nativeNes.loadSfc(name,hash);}
         @JavascriptInterface public String nativeMdStart(String name,String hash){return nativeNes.loadMd(name,hash);}
         @JavascriptInterface public String nativeGbaStart(String name,String hash){return nativeNes.loadGba(name,hash);}
         @JavascriptInterface public String nativeArcadeStart(String name,String hash){return nativeNes.loadArcade(name,hash);}
+        @JavascriptInterface public String nativeMameStart(String name,String hash){return nativeNes.loadMame(name,hash);}
         @JavascriptInterface public String nativeNesStart(String data,String hash){return nativeNes.load(data,hash);}
         @JavascriptInterface public void nativeNesPause(){nativeNes.pause();}
         @JavascriptInterface public void nativeNesResume(){nativeNes.resume();}
@@ -206,12 +247,14 @@ public class MainActivity extends Activity implements InputManager.InputDeviceLi
         @JavascriptInterface public void nativeNesButton(int player,int button,boolean down){nativeNes.button(player,button,down);}
         @JavascriptInterface public void nativeNesRelease(){nativeNes.releaseAll();}
         @JavascriptInterface public void nativeNesVolume(float value){nativeNes.volume(value);}
+        @JavascriptInterface public void nativeNesShader(int mode){nativeNes.shader(mode);}
+        @JavascriptInterface public boolean nativeNesVertical(){return nativeNes.isVertical();}
         @JavascriptInterface public void nativeNesBounds(float left,float top,float width,float height,float viewportWidth,float viewportHeight){nativeNes.bounds(left,top,width,height,viewportWidth,viewportHeight);}
         @JavascriptInterface public String nativeNesSnapshot(){return nativeNes.snapshot();}
         @JavascriptInterface public String nativeNesRestore(String value){return nativeNes.restore(value);}
         @JavascriptInterface public String nativeNesImage(){return nativeNes.image();}
         @JavascriptInterface public String nativeNesStats(){return nativeNes.stats();}
-        @JavascriptInterface public String readAsset(String path){if(path==null||!path.matches("roms/[a-z0-9-]+\\.nes"))return null;try{return Base64.encodeToString(readAll(getAssets().open(path),8*1024*1024),Base64.NO_WRAP);}catch(Exception e){return null;}}
+        @JavascriptInterface public String readAsset(String path){if(path==null||path.contains("..")||path.startsWith("/"))return null;String root=externalRoot(MainActivity.this);File ext=new File(root,path);if(!ext.isFile())ext=new File(new File(root,"nes"),path);if(ext.isFile())try{return Base64.encodeToString(readAll(new FileInputStream(ext),8*1024*1024),Base64.NO_WRAP);}catch(Exception e){return null;}if(!path.matches("roms/[a-z0-9-]+\\.nes"))return null;try{return Base64.encodeToString(readAll(getAssets().open(path),8*1024*1024),Base64.NO_WRAP);}catch(Exception e){return null;}}
         @JavascriptInterface public String readStore(String key){synchronized(storeLock){try{File f=keyFile(storeDir,key);if(!f.exists())return null;return new String(readAll(new AtomicFile(f).openRead(),32*1024*1024),"UTF-8");}catch(Exception e){return "{\"__readError\":true}";}}}
         @JavascriptInterface public boolean writeStore(String key,String value){synchronized(storeLock){try{if(value==null||value.length()>32*1024*1024)return false;new JSONObject("{\"value\":"+value+"}");atomicWrite(keyFile(storeDir,key),value);return true;}catch(Exception e){return false;}}}
         @JavascriptInterface public String appAbi(){String arch=System.getProperty("os.arch", "");if(arch.equals("aarch64")||arch.equals("arm64"))return "arm64-v8a";if(arch.startsWith("arm"))return "armeabi-v7a";return "unknown";}

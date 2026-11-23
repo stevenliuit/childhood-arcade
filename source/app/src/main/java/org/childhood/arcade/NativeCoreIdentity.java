@@ -20,7 +20,8 @@ final class NativeCoreIdentity {
    case "libfbneo.so":return "fbneo-native-82637a59dbe0";
    case "libfbneo3g.so":return "fbneo-3g-native-665a6ba8d0b9";
    case "libfbneo5g.so":return "fbneo-5g-native-c24dc98d08ae";
-   case "libfbneo5w.so":return "fbneo-fc-native-f79c0f55b980";
+    case "libfbneo5w.so":return "fbneo-fc-native-f79c0f55b980";
+    case "libmame.so":return "mame-native-64df61b8f560";
    default:throw new IllegalArgumentException("未知64位核心");
   }
  }

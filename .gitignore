@@ -11,7 +11,11 @@
 *.state
 *.local.json
 node_modules/
-build/
+/build/
+/_out/
+/_build/
+/_games/
+*.exe
 .DS_Store
 __pycache__/
 *.pyc

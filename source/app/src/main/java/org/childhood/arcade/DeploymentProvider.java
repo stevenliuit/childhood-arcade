@@ -12,6 +12,10 @@ public final class DeploymentProvider extends ContentProvider {
   if("capabilities".equals(method)){result.put("protocol",1);}
   else if("restore".equals(method)){restore(arg);result.put("restored",true);}
   else if("health".equals(method)){android.content.SharedPreferences prefs=getContext().getSharedPreferences("deployment",0);if(prefs.getLong("health_at",0)<=0||android.os.SystemClock.elapsedRealtime()-prefs.getLong("health_at",0)<0||android.os.SystemClock.elapsedRealtime()-prefs.getLong("health_at",0)>5000)throw new IOException("Stale health");result=new JSONObject(prefs.getString("health","{}"));}
+  else if("diag".equals(method)){
+MainActivity a=MainActivity.instance;if(a==null)throw new IOException("app not running");
+result=new JSONObject(a.diagLoad(arg));}
+  else if("probe".equals(method)){if(arg==null||arg.contains("..")||arg.startsWith("/"))throw new IOException("Invalid path");File f=new File(MainActivity.externalRoot(getContext()),arg);if(!f.isFile())throw new IOException("Missing "+arg);result.put("path",arg).put("bytes",f.length()).put("sha256",hash(f));}
   else if("verify".equals(method)||"install".equals(method)){
    if(arg==null||!arg.matches("[a-z0-9-]{1,60}\\.(zip|gba|md|sfc)"))throw new IOException("Invalid resource name");JSONObject e=entry(arg);File dest=target(arg);String expected=e.getString("sha256");
    if(dest.exists()&&(!dest.isFile()||!hash(dest).equals(expected)))throw new IOException("Existing different resource preserved");

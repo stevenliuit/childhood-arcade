@@ -26,7 +26,7 @@ public final class NativeNes {
     public static final String SFC_ENGINE="snes9x2005plus-native-ada4dbf17de5";
     public static final String MD_ENGINE="picodrive-native-c1cc15edda64";
     public static final String GBA_ENGINE="mgba-native-a976a807a7bd";
-    public static final String ARCADE_ENGINE="fba2012-native-749e6f6079e0";
+    public static final String ARCADE_ENGINE="fbneo-native-5a15ab447444";
     public static final String ENGINE="fceumm-native-81ebd3e72d96";
     public interface CoreLog extends Callback {void callback(int level,String format);}
     private final CoreLog coreLog=new CoreLog(){public void callback(int level,String format){if(level>=2)android.util.Log.w("ArcadeCore",format);}};
@@ -55,6 +55,8 @@ public final class NativeNes {
     private boolean arcade=false,handheld=false,megadrive=false,superNintendo=false;
     private final java.util.HashMap<String,Memory> coreOptions=new java.util.HashMap<String,Memory>();
     private float volume=.7f;
+    private volatile int shaderMode=2;
+    private volatile int rotation=0;
     private int pixelFormat=0,sampleRate=48000;
     private ByteBuffer picture;
     private byte[] packed;
@@ -72,6 +74,7 @@ public final class NativeNes {
     private final Environment environment=new Environment(){public byte callback(int cmd,Pointer p){
         switch(cmd&0xffff){
         case 27:p.setPointer(0,CallbackReference.getFunctionPointer(coreLog));return 1;
+        case 1:rotation=p.getInt(0)&3;return 1; // SET_ROTATION
         case 3:p.setByte(0,(byte)1);return 1; // can duplicate video frames
         case 10:int format=p.getInt(0);if(format==1||format==2){pixelFormat=format;return 1;}return 0;
         case 9:case 31:case 30:p.setPointer(0,directory);return 1;
@@ -148,16 +151,18 @@ public final class NativeNes {
             return startThread();
         }catch(Throwable e){error=e.toString();try{close();}catch(Throwable ignored){}return error(e);}
     }
-    public String loadArcade(String name,String expected){return loadExternal(name,expected,false,false,false);}
-    public String loadGba(String name,String expected){return loadExternal(name,expected,true,false,false);}
-    public String loadMd(String name,String expected){return loadExternal(name,expected,false,true,false);}
-    public String loadSfc(String name,String expected){return loadExternal(name,expected,false,false,true);}
-    private String loadExternal(String name,String expected,boolean gba,boolean md,boolean sfc){
+    public String loadArcade(String name,String expected){return loadExternal(name,expected,false,false,false,false);}
+    public String loadGba(String name,String expected){return loadExternal(name,expected,true,false,false,false);}
+    public String loadMd(String name,String expected){return loadExternal(name,expected,false,true,false,false);}
+    public String loadSfc(String name,String expected){return loadExternal(name,expected,false,false,true,false);}
+    public String loadMame(String name,String expected){return loadExternal(name,expected,false,false,false,true);}
+    private String loadExternal(String name,String expected,boolean gba,boolean md,boolean sfc,boolean mame){
         try{
-            close();handheld=gba;megadrive=md;superNintendo=sfc;arcade=!gba&&!md&&!sfc;engineId=sfc?("sfc-kirby-superstar.sfc".equals(name)?SFC_FAST_ENGINE:SFC_ENGINE):md?MD_ENGINE:gba?GBA_ENGINE:ARCADE_ENGINE;library=sfc?("sfc-kirby-superstar.sfc".equals(name)?"libsnes9x2005.so":"libsnes9x2005plus.so"):md?"libpicodrive.so":gba?"libmgba.so":"libarcade.so";if(arcade&&("mslugdg.zip".equals(name)||"mslug2dg.zip".equals(name)||"mslug3v.zip".equals(name)||"sf2ce.zip".equals(name)||"ssf2.zip".equals(name))){library="libfbneo.so";engineId="fbneo-native-5a15ab447444";}if(arcade&&("mslug5w.zip".equals(name)||"mslug3lw.zip".equals(name))){library="libfbneo5w.so";engineId="fbneo-fc-native-a9db9b2ce5ee";}if(arcade&&"mslug5dg.zip".equals(name)){library="libfbneo5g.so";engineId="fbneo-5g-native-9244f6199f48";}if(arcade&&"mslug3g.zip".equals(name)){library="libfbneo3g.so";engineId="fbneo-3g-native-f8e7c15a91e1";}
+            close();handheld=gba;megadrive=md;superNintendo=sfc;arcade=!gba&&!md&&!sfc;engineId=sfc?("sfc-kirby-superstar.sfc".equals(name)?SFC_FAST_ENGINE:SFC_ENGINE):md?MD_ENGINE:gba?GBA_ENGINE:ARCADE_ENGINE;            library=sfc?("sfc-kirby-superstar.sfc".equals(name)?"libsnes9x2005.so":"libsnes9x2005plus.so"):md?"libpicodrive.so":gba?"libmgba.so":"libfbneo.so";if(arcade&&("mslugdg.zip".equals(name)||"mslug2dg.zip".equals(name)||"mslug3v.zip".equals(name)||"sf2ce.zip".equals(name)||"ssf2.zip".equals(name))){library="libfbneo.so";engineId="fbneo-native-5a15ab447444";}if(arcade&&("mslug5w.zip".equals(name)||"mslug3lw.zip".equals(name))){library="libfbneo5w.so";engineId="fbneo-fc-native-a9db9b2ce5ee";}if(arcade&&"mslug5dg.zip".equals(name)){library="libfbneo5g.so";engineId="fbneo-5g-native-9244f6199f48";}if(arcade&&"mslug3g.zip".equals(name)){library="libfbneo3g.so";engineId="fbneo-3g-native-f8e7c15a91e1";}if(mame){library="libmame.so";engineId="mame-native-000000000000";}
             engineId=abiCoreIdentity(engineId,library);
-            if(name==null||!name.matches(sfc?"[a-z0-9-]{1,60}\\.sfc":md?"[a-z0-9-]{1,60}\\.md":gba?"[a-z0-9-]{1,60}\\.gba":"[a-z0-9-]{1,60}\\.zip")||expected==null||!expected.matches("[a-f0-9]{64}"))throw new IOException((sfc?"SFC":md?"MD":gba?"GBA":"街机")+"目录无效");
+            if(name==null||!name.matches(sfc?"[a-z0-9-]{1,60}\\.sfc":md?"[a-z0-9-]{1,60}\\.md":gba?"[a-z0-9-]{1,60}\\.gba":"[a-z0-9_-]{1,60}\\.zip")||expected==null||!expected.matches("[a-f0-9]{64}"))throw new IOException((sfc?"SFC":md?"MD":gba?"GBA":"街机")+"目录无效");
             File folder=new File(activity.getFilesDir(),sfc?"sfc/roms":md?"md/roms":gba?"gba/roms":"arcade/roms");gameFile=new File(folder,name);
+            File pub=new File(new File(MainActivity.externalRoot(activity)),sfc?"sfc/roms":md?"md/roms":gba?"gba/roms":"arcade/roms");File pubGame=new File(pub,name);if(pubGame.isFile()){gameFile=pubGame;folder=pub;}
             File imported=((MainActivity)activity).resources.resolve(expected);if(imported!=null){gameFile=imported;folder=imported.getParentFile();}
             if(!gameFile.isFile())throw new IOException((sfc?"SFC":md?"MD":gba?"GBA":"街机")+"资源尚未安装，请先导入游戏资源包");
             if(!fileDigest(gameFile).equals(expected))throw new IOException((sfc?"SFC":md?"MD":gba?"GBA":"街机")+"资源校验失败，请重新导入游戏资源包");
@@ -204,7 +209,7 @@ public final class NativeNes {
     public void pause(){running=false;synchronized(lock){releaseAll();if(track!=null){track.pause();track.flush();}if(loaded)saveBattery();}hide();}
     private void hide(){activity.runOnUiThread(new Runnable(){public void run(){view.setVisibility(View.GONE);}});}
     public void close(){
-        running=false;stop=true;hide();Thread old=thread;thread=null;
+        running=false;stop=true;hide();rotation=0;Thread old=thread;thread=null;
         if(old!=null&&old!=Thread.currentThread()){try{old.join(1500);}catch(InterruptedException e){Thread.currentThread().interrupt();}if(old.isAlive())throw new IllegalStateException("游戏尚未停止");}
         synchronized(lock){releaseAll();if(loaded){saveBattery();fn("retro_unload_game").invokeVoid(new Object[]{});}if(initialized){fn("retro_deinit").invokeVoid(new Object[]{});initialized=false;}loaded=false;if(gameFile!=null){if(!arcade&&!handheld&&!megadrive&&!superNintendo)gameFile.delete();gameFile=null;}hash=null;if(track!=null){track.pause();track.flush();track.release();track=null;}romMemory=gameInfo=pathMemory=null;if((arcade||handheld||megadrive||superNintendo)&&core!=null){core.close();core=null;loadedLibrary=null;coreOptions.clear();}}
     }
@@ -217,6 +222,8 @@ public final class NativeNes {
     public boolean isSfc(){return superNintendo;}
     public void button(int player,int button,boolean down){if(down)inputStamp.set(System.nanoTime());if(handheld&&player!=1)return;int[] mapping=megadrive?new int[]{1,0,2,3,4,5,6,7,8,9,10,11}:(arcade||superNintendo)?new int[]{0,8,2,3,4,5,6,7,1,9,10,11}:handheld?new int[]{8,0,2,3,4,5,6,7,1,9,10,11}:new int[]{8,0,2,3,4,5,6,7};if(player<1||player>(supportsFourPlayers()?4:2)||button<0||button>=mapping.length)return;int index=player-1,mask=1<<mapping[button],old,now;do{old=buttons.get(index);now=down?(old|mask):(old&~mask);}while(!buttons.compareAndSet(index,old,now));}
     public void volume(float value){volume=Math.max(0,Math.min(1,value));synchronized(lock){if(track!=null)track.setVolume(volume);}}
+    public void shader(int mode){shaderMode=Math.max(0,Math.min(2,mode));}
+    public boolean isVertical(){return (rotation==1||rotation==3);}
     public void bounds(final float left,final float top,final float width,final float height,final float viewportWidth,final float viewportHeight){if(width<1||height<1)return;activity.runOnUiThread(new Runnable(){public void run(){FrameLayout.LayoutParams p=new FrameLayout.LayoutParams(Math.round(width*parent.getWidth()/viewportWidth),Math.round(height*parent.getHeight()/viewportHeight));p.leftMargin=Math.round(left*parent.getWidth()/viewportWidth);p.topMargin=Math.round(top*parent.getHeight()/viewportHeight);view.setLayoutParams(p);}});}
     public String snapshot(){
         synchronized(lock){try{if(!loaded)throw new IOException("没有正在运行的游戏");int n=((NativeLong)stateSize.invoke(NativeLong.class,new Object[]{})).intValue();if(n<1||n>8*1024*1024)throw new IOException("存档大小异常");Memory state=new Memory(n);if(serialize.invokeInt(new Object[]{state,new NativeLong(n)})==0)throw new IOException("保存进度失败");byte[] bytes=state.getByteArray(0,n);JSONObject obj=new JSONObject();obj.put("schema",1);obj.put("engine",engineId);obj.put("hash",hash);obj.put("frames",frames);JSONObject data=new JSONObject();data.put("format","libretro-base64");data.put("data",Base64.encodeToString(bytes,Base64.NO_WRAP));data.put("bytes",n);data.put("sha256",digest(bytes));obj.put("state",data);return obj.toString();}catch(Throwable e){return error(e);}}
@@ -236,17 +243,22 @@ public final class NativeNes {
     private static String error(Throwable e){try{return new JSONObject().put("error",e.getMessage()==null?e.toString():e.getMessage()).toString();}catch(Exception ignored){return "{\"error\":\"游戏运行失败\"}";}}
     private final class GameView extends GLSurfaceView implements GLSurfaceView.Renderer {
         private final FloatBuffer vertices=ByteBuffer.allocateDirect(32).order(ByteOrder.nativeOrder()).asFloatBuffer();
-        private final FloatBuffer texture=ByteBuffer.allocateDirect(32).order(ByteOrder.nativeOrder()).asFloatBuffer();
-        private int program,tex,position,uv,isXrgb,textureWidth=0,textureHeight=0,textureBytes=0;
+        private final FloatBuffer[] textures=new FloatBuffer[4];
+        private int program,tex,position,uv,isXrgb,sourceSizeLoc,shaderModeLoc,textureWidth=0,textureHeight=0,textureBytes=0;
         GameView(Activity context){
             super(context);setEGLContextClientVersion(2);setPreserveEGLContextOnPause(true);
-            vertices.put(new float[]{-1,-1,1,-1,-1,1,1,1}).position(0);texture.put(new float[]{0,1,1,1,0,0,1,0}).position(0);
+            vertices.put(new float[]{-1,-1,1,-1,-1,1,1,1}).position(0);
+            for(int i=0;i<4;i++)textures[i]=ByteBuffer.allocateDirect(32).order(ByteOrder.nativeOrder()).asFloatBuffer();
+            textures[0].put(new float[]{0,1,1,1,0,0,1,0}).position(0);
+            textures[1].put(new float[]{0,0,0,1,1,0,1,1}).position(0);
+            textures[2].put(new float[]{1,0,0,0,1,1,0,1}).position(0);
+            textures[3].put(new float[]{1,1,1,0,0,1,0,0}).position(0);
             setRenderer(this);setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);
         }
         private int shader(int type,String source){int shader=GLES20.glCreateShader(type);GLES20.glShaderSource(shader,source);GLES20.glCompileShader(shader);int[] ok={0};GLES20.glGetShaderiv(shader,GLES20.GL_COMPILE_STATUS,ok,0);if(ok[0]==0)throw new IllegalStateException(GLES20.glGetShaderInfoLog(shader));return shader;}
         public void onSurfaceCreated(GL10 gl,EGLConfig config){
-            program=GLES20.glCreateProgram();int vs=shader(GLES20.GL_VERTEX_SHADER,"attribute vec2 a;attribute vec2 t;varying vec2 v;void main(){gl_Position=vec4(a,0.,1.);v=t;}");int fs=shader(GLES20.GL_FRAGMENT_SHADER,"precision mediump float;uniform sampler2D image;uniform int xrgb;varying vec2 v;void main(){vec4 c=texture2D(image,v);gl_FragColor=xrgb==1?vec4(c.b,c.g,c.r,1.):vec4(c.rgb,1.);}");
-            GLES20.glAttachShader(program,vs);GLES20.glAttachShader(program,fs);GLES20.glLinkProgram(program);GLES20.glDeleteShader(vs);GLES20.glDeleteShader(fs);GLES20.glUseProgram(program);position=GLES20.glGetAttribLocation(program,"a");uv=GLES20.glGetAttribLocation(program,"t");isXrgb=GLES20.glGetUniformLocation(program,"xrgb");int[] ids={0};GLES20.glGenTextures(1,ids,0);tex=ids[0];GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,tex);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MIN_FILTER,GLES20.GL_NEAREST);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MAG_FILTER,GLES20.GL_NEAREST);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_WRAP_S,GLES20.GL_CLAMP_TO_EDGE);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_WRAP_T,GLES20.GL_CLAMP_TO_EDGE);GLES20.glPixelStorei(GLES20.GL_UNPACK_ALIGNMENT,1);textureWidth=textureHeight=textureBytes=0;
+            program=GLES20.glCreateProgram();int vs=shader(GLES20.GL_VERTEX_SHADER,"attribute vec2 a;attribute vec2 t;varying vec2 v;void main(){gl_Position=vec4(a,0.,1.);v=t;}");int fs=shader(GLES20.GL_FRAGMENT_SHADER,"precision mediump float;uniform sampler2D image;uniform int xrgb;uniform vec2 sourceSize;uniform int shaderMode;varying vec2 v;void main(){vec4 t=texture2D(image,v);vec3 c=xrgb==1?t.bgr:t.rgb;if(shaderMode==0){gl_FragColor=vec4(c,1.0);return;}float sl=fract(v.y*sourceSize.y);float scan=0.78+0.22*sin(sl*3.14159265);float px=fract(v.x*sourceSize.x/3.0);float mask=0.90+0.10*sin(px*3.14159265);vec2 d=v-0.5;float vig=1.0-0.30*dot(d,d);float s=shaderMode>=1?scan:1.0;float m=shaderMode>=2?mask:1.0;gl_FragColor=vec4(c*s*m*vig,1.0);}");
+            GLES20.glAttachShader(program,vs);GLES20.glAttachShader(program,fs);GLES20.glLinkProgram(program);GLES20.glDeleteShader(vs);GLES20.glDeleteShader(fs);GLES20.glUseProgram(program);position=GLES20.glGetAttribLocation(program,"a");uv=GLES20.glGetAttribLocation(program,"t");isXrgb=GLES20.glGetUniformLocation(program,"xrgb");sourceSizeLoc=GLES20.glGetUniformLocation(program,"sourceSize");shaderModeLoc=GLES20.glGetUniformLocation(program,"shaderMode");int[] ids={0};GLES20.glGenTextures(1,ids,0);tex=ids[0];GLES20.glBindTexture(GLES20.GL_TEXTURE_2D,tex);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MIN_FILTER,GLES20.GL_NEAREST);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_MAG_FILTER,GLES20.GL_NEAREST);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_WRAP_S,GLES20.GL_CLAMP_TO_EDGE);GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D,GLES20.GL_TEXTURE_WRAP_T,GLES20.GL_CLAMP_TO_EDGE);GLES20.glPixelStorei(GLES20.GL_UNPACK_ALIGNMENT,1);textureWidth=textureHeight=textureBytes=0;
         }
         public void onSurfaceChanged(GL10 gl,int width,int height){GLES20.glViewport(0,0,width,height);}
         public void onDrawFrame(GL10 gl){
@@ -255,7 +267,7 @@ public final class NativeNes {
                 if(textureWidth!=pictureWidth||textureHeight!=pictureHeight||textureBytes!=pictureBytes){GLES20.glTexImage2D(GLES20.GL_TEXTURE_2D,0,format,pictureWidth,pictureHeight,0,format,type,picture);textureWidth=pictureWidth;textureHeight=pictureHeight;textureBytes=pictureBytes;}
                 else GLES20.glTexSubImage2D(GLES20.GL_TEXTURE_2D,0,0,0,pictureWidth,pictureHeight,format,type,picture);picture.position(0);
             }
-            GLES20.glUniform1i(isXrgb,pictureBytes==4?1:0);vertices.position(0);texture.position(0);GLES20.glVertexAttribPointer(position,2,GLES20.GL_FLOAT,false,0,vertices);GLES20.glEnableVertexAttribArray(position);GLES20.glVertexAttribPointer(uv,2,GLES20.GL_FLOAT,false,0,texture);GLES20.glEnableVertexAttribArray(uv);GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP,0,4);presentedFrames++;
+            GLES20.glUniform1i(isXrgb,pictureBytes==4?1:0);GLES20.glUniform2f(sourceSizeLoc,pictureWidth,pictureHeight);GLES20.glUniform1i(shaderModeLoc,shaderMode);vertices.position(0);FloatBuffer tx=textures[rotation&3];tx.position(0);GLES20.glVertexAttribPointer(position,2,GLES20.GL_FLOAT,false,0,vertices);GLES20.glEnableVertexAttribArray(position);GLES20.glVertexAttribPointer(uv,2,GLES20.GL_FLOAT,false,0,tx);GLES20.glEnableVertexAttribArray(uv);GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP,0,4);presentedFrames++;
         }
     }
 }

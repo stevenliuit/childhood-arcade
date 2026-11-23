@@ -1,0 +1,43 @@
+{
+  "_说明": "本机构建路径。按自己的环境改；keystore 密码不写这里，用环境变量 ARCADE_KS_PASS 传入。",
+
+  "repo_root": ".",
+  "source_dir": "source/app/src/main",
+  "work_dir": "./_build",
+
+  "toolchain": {
+    "_说明": "Android 构建工具，需从 Android SDK / build-tools 里取齐这 4 个文件",
+    "android_jar": "./_build/tc/android.jar",
+    "aapt2": "./_build/tc/aapt2.exe",
+    "zipalign": "./_build/tc/zipalign.exe",
+    "apksigner": "./_build/tc/apksigner.jar",
+    "d8": "./_build/tc/d8.jar"
+  },
+
+  "jdk": "C:/Program Files/Microsoft/jdk-17/bin",
+
+  "keystore": "./arcade.keystore",
+  "keystore_alias": "arcade",
+
+  "native_libs": {
+    "_说明": "各 ABI 的原生内核包（从 libretro buildbot 下载后重打包），文件名相对 work_dir",
+    "armeabi-v7a": "base-arm32.apk",
+    "arm64-v8a": "base-arm64.apk"
+  },
+
+  "drop_libarcade": true,
+
+  "catalog_merged": "./_build/catalog.merged.js",
+  "deployment_resources": "./_build/deployment-resources.json",
+  "bezels_from_apk": "./童年游戏厅-面框.apk",
+
+  "games_dir": "./_games",
+  "output_dir": "./_out",
+
+  "editor_source": "./tools/editor/游戏库编辑器.py",
+  "editor_icon": "./tools/editor/editor.ico",
+  "editor_version_file": "./tools/editor/version_info.txt",
+
+  "version_code": "211",
+  "version_name": "2.0.0"
+}
